@@ -529,7 +529,8 @@ header h1 {
 }
 
 #inline-note-input,
-#inline-velocity-input {
+#inline-velocity-input,
+#inline-channel-input {
     width: 100%;
     padding: 0.6rem 0.75rem;
     font-family: 'JetBrains Mono', monospace;
@@ -546,19 +547,23 @@ header h1 {
     text-transform: uppercase;
 }
 
-#inline-velocity-input {
+#inline-velocity-input,
+#inline-channel-input {
     appearance: textfield;
     -moz-appearance: textfield;
 }
 
 #inline-velocity-input::-webkit-outer-spin-button,
-#inline-velocity-input::-webkit-inner-spin-button {
+#inline-velocity-input::-webkit-inner-spin-button,
+#inline-channel-input::-webkit-outer-spin-button,
+#inline-channel-input::-webkit-inner-spin-button {
     appearance: none;
     -webkit-appearance: none;
 }
 
 #inline-note-input:focus,
-#inline-velocity-input:focus {
+#inline-velocity-input:focus,
+#inline-channel-input:focus {
     outline: none;
     border-color: var(--accent-primary);
 }

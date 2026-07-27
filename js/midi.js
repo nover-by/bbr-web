@@ -6,6 +6,7 @@ export class MIDIController {
         this.noteConfig = this.getDefaultNoteConfig();
         this.activeNotes = new Set();
         this.noteToBitMap = new Map(); // Track which bit is playing which note
+        this.activeBitNotes = new Map(); // Track notes playing per bit: bit -> {note, channel}
         this.isAvailable = false;
         this.scaleMode = 'None'; // None, Major, Minor, Dorian, Phrygian, Lydian, Mixolydian, Aeolian, Locrian
         this.rootNote = 57; // A3 by default (same as bit 0)
@@ -104,15 +105,16 @@ export class MIDIController {
     getDefaultNoteConfig() {
         // Default: A minor chord (A, C, E) with extensions (G, B, D, F, A')
         // 7: G2, 6: A2, 5: B2, 4: C3, 3: D3, 2: E3, 1: F3, 0: A3
+        // Each bit can have its own MIDI channel (0-15)
         return {
-            7: { note: 43, velocity: 100 }, // G2
-            6: { note: 45, velocity: 100 }, // A2 (root)
-            5: { note: 47, velocity: 100 }, // B2
-            4: { note: 48, velocity: 100 }, // C3 (minor third)
-            3: { note: 50, velocity: 100 }, // D3
-            2: { note: 52, velocity: 100 }, // E3 (fifth)
-            1: { note: 53, velocity: 100 }, // F3
-            0: { note: 57, velocity: 100 }, // A3 (octave)
+            7: { note: 43, velocity: 100, channel: 0 }, // G2
+            6: { note: 45, velocity: 100, channel: 0 }, // A2 (root)
+            5: { note: 47, velocity: 100, channel: 0 }, // B2
+            4: { note: 48, velocity: 100, channel: 0 }, // C3 (minor third)
+            3: { note: 50, velocity: 100, channel: 0 }, // D3
+            2: { note: 52, velocity: 100, channel: 0 }, // E3 (fifth)
+            1: { note: 53, velocity: 100, channel: 0 }, // F3
+            0: { note: 57, velocity: 100, channel: 0 }, // A3 (octave)
         };
     }
 
@@ -181,7 +183,7 @@ export class MIDIController {
         }
     }
 
-    setNoteConfig(bit, note, velocity) {
+    setNoteConfig(bit, note, velocity, channel) {
         if (bit >= 0 && bit <= 7) {
             let noteNumber;
             
@@ -215,9 +217,13 @@ export class MIDIController {
                     noteNumber = MIDIController.quantizeToScale(noteNumber, this.rootNote, scaleIntervals);
                 }
                 
+                // Preserve existing channel if not provided
+                const midiChannel = channel !== undefined ? Math.max(0, Math.min(15, channel)) : (this.noteConfig[bit]?.channel ?? 0);
+                
                 this.noteConfig[bit] = {
                     note: Math.max(0, Math.min(127, noteNumber)),
-                    velocity: Math.max(0, Math.min(127, velocity))
+                    velocity: Math.max(0, Math.min(127, velocity)),
+                    channel: midiChannel
                 };
             }
         }
@@ -227,69 +233,74 @@ export class MIDIController {
         // If no MIDI output selected, just return silently
         if (!this.selectedOutput) return;
 
-        const currentBitNotes = new Map(); // Map of bit -> note for this step
-        const notesToBits = new Map(); // Map of note -> Set of bits playing it
-        
-        // Build mapping of which bits are playing which notes
+        // Track which bits should be active in this step
+        const bitsActive = new Set();
         for (let bit = 0; bit <= 7; bit++) {
             if ((value >> bit) & 1) {
-                const config = this.noteConfig[bit];
-                if (config) {
-                    currentBitNotes.set(bit, config.note);
-                    
-                    if (!notesToBits.has(config.note)) {
-                        notesToBits.set(config.note, new Set());
-                    }
-                    notesToBits.get(config.note).add(bit);
+                bitsActive.add(bit);
+            }
+        }
+
+        // Handle bits that are no longer active - send note off
+        for (const [bit, noteData] of this.activeBitNotes) {
+            if (!bitsActive.has(bit)) {
+                // Send note off for this bit
+                this.sendNoteOff(noteData.note, noteData.channel);
+                this.activeBitNotes.delete(bit);
+                
+                // Also remove from old tracking system
+                this.activeNotes.delete(noteData.note);
+                if (this.noteToBitMap.get(noteData.note) === bit) {
+                    this.noteToBitMap.delete(noteData.note);
                 }
             }
         }
 
-        // Handle note retriggering logic
-        for (const [note, bitsPlayingIt] of notesToBits) {
-            const previousBit = this.noteToBitMap.get(note);
-            const currentBit = bitsPlayingIt.values().next().value; // Get first bit playing this note
+        // Handle bits that are active - send note on
+        for (const bit of bitsActive) {
+            const config = this.noteConfig[bit];
+            if (!config) continue;
             
-            if (this.activeNotes.has(note)) {
-                // Note is already playing
-                if (previousBit !== undefined && !bitsPlayingIt.has(previousBit)) {
-                    // Different bit is now playing this note - retrigger
-                    this.sendNoteOff(note);
-                    const config = this.noteConfig[currentBit];
-                    this.sendNoteOn(config.note, config.velocity);
-                    this.noteToBitMap.set(note, currentBit);
+            const existingNote = this.activeBitNotes.get(bit);
+            
+            if (existingNote) {
+                // Bit was already playing - check if note/channel changed
+                if (existingNote.note !== config.note || existingNote.channel !== config.channel) {
+                    // Note or channel changed - retrigger
+                    this.sendNoteOff(existingNote.note, existingNote.channel);
+                    this.sendNoteOn(config.note, config.velocity, config.channel);
+                    this.activeBitNotes.set(bit, {note: config.note, channel: config.channel});
+                    
+                    // Update old tracking system
+                    this.activeNotes.delete(existingNote.note);
+                    this.activeNotes.add(config.note);
+                    this.noteToBitMap.set(config.note, bit);
                 }
-                // else: same bit is still playing - sustain
+                // else: sustain same note
             } else {
-                // Note is not playing - start it
-                const config = this.noteConfig[currentBit];
-                this.sendNoteOn(config.note, config.velocity);
-                this.activeNotes.add(note);
-                this.noteToBitMap.set(note, currentBit);
-            }
-        }
-
-        // Stop notes that are no longer active
-        for (const note of this.activeNotes) {
-            if (!notesToBits.has(note)) {
-                this.sendNoteOff(note);
+                // New note for this bit
+                this.sendNoteOn(config.note, config.velocity, config.channel);
+                this.activeBitNotes.set(bit, {note: config.note, channel: config.channel});
+                this.activeNotes.add(config.note);
                 this.activeNotes.delete(note);
                 this.noteToBitMap.delete(note);
             }
         }
     }
 
-    sendNoteOn(note, velocity) {
+    sendNoteOn(note, velocity, channel) {
         if (!this.selectedOutput) return;
         
-        const status = 0x90 | this.channel; // Note On
+        const midiChannel = channel !== undefined ? channel : this.channel;
+        const status = 0x90 | midiChannel; // Note On
         this.selectedOutput.send([status, note, velocity]);
     }
 
-    sendNoteOff(note) {
+    sendNoteOff(note, channel) {
         if (!this.selectedOutput) return;
         
-        const status = 0x80 | this.channel; // Note Off
+        const midiChannel = channel !== undefined ? channel : this.channel;
+        const status = 0x80 | midiChannel; // Note Off
         this.selectedOutput.send([status, note, 0]);
     }
 
@@ -298,19 +309,24 @@ export class MIDIController {
         if (!this.selectedOutput) {
             this.activeNotes.clear();
             this.noteToBitMap.clear();
+            this.activeBitNotes.clear();
             return;
         }
         
-        // Send note-off for all active notes
-        for (const note of this.activeNotes) {
-            this.sendNoteOff(note);
+        // Send note-off for all active bit notes with their channels
+        for (const [bit, noteData] of this.activeBitNotes) {
+            this.sendNoteOff(noteData.note, noteData.channel);
         }
+        
+        // Send All Notes Off CC message on all channels
+        for (let ch = 0; ch < 16; ch++) {
+            const status = 0xB0 | ch; // Control Change
+            this.selectedOutput.send([status, 123, 0]); // All Notes Off
+        }
+        
         this.activeNotes.clear();
         this.noteToBitMap.clear();
-
-        // Also send All Notes Off CC message
-        const status = 0xB0 | this.channel; // Control Change
-        this.selectedOutput.send([status, 123, 0]); // All Notes Off
+        this.activeBitNotes.clear();
     }
 
     onStateChange(event) {

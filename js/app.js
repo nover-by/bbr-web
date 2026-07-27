@@ -49,6 +49,7 @@ class App {
         this.inlineBitNum = document.getElementById('inline-bit-num');
         this.inlineNoteInput = document.getElementById('inline-note-input');
         this.inlineVelocityInput = document.getElementById('inline-velocity-input');
+        this.inlineChannelInput = document.getElementById('inline-channel-input');
         this.inlineCloseBtn = document.getElementById('inline-close-btn');
         this.currentEditingBit = null;
         
@@ -219,6 +220,17 @@ class App {
         });
         
         this.inlineVelocityInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.inlineChannelInput.focus();
+            }
+        });
+        
+        this.inlineChannelInput.addEventListener('blur', () => {
+            this.saveInlineConfig();
+        });
+        
+        this.inlineChannelInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 this.closeInlineEditor();
@@ -524,6 +536,7 @@ class App {
         
         this.inlineNoteInput.value = noteName;
         this.inlineVelocityInput.value = config.velocity;
+        this.inlineChannelInput.value = config.channel ?? 0;
         
         this.ledEditorInline.style.display = 'block';
         this.inlineNoteInput.focus();
@@ -541,6 +554,7 @@ class App {
         
         const noteValue = this.inlineNoteInput.value.trim();
         const velocity = parseInt(this.inlineVelocityInput.value);
+        const channel = parseInt(this.inlineChannelInput.value);
         
         if (!noteValue) return;
         
@@ -568,7 +582,7 @@ class App {
         this.inlineNoteInput.style.borderColor = '';
         
         // Update MIDI config (used by both synth and MIDI)
-        this.midi.setNoteConfig(this.currentEditingBit, noteValue, velocity);
+        this.midi.setNoteConfig(this.currentEditingBit, noteValue, velocity, channel);
         
         // Update LED label
         this.updateLEDLabel(this.currentEditingBit);
