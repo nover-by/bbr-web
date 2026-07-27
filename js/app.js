@@ -501,7 +501,7 @@ class App {
                 led.style.setProperty('--led-brightness', brightness);
             } else {
                 led.classList.remove('active');
-                led.style.setProperty('--led-brightness', 0.2);
+                led.style.setProperty('--led-brightness', 0.7);
             }
         });
 

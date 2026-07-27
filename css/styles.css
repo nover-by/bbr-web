@@ -412,7 +412,7 @@ header h1 {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.9rem;
     font-weight: 700;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     transition: color 0.1s;
 }
 
@@ -423,7 +423,7 @@ header h1 {
 .led-bit-num {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.65rem;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     transition: color 0.1s;
 }
 
