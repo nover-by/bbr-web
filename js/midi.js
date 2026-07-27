@@ -282,8 +282,7 @@ export class MIDIController {
                 this.sendNoteOn(config.note, config.velocity, config.channel);
                 this.activeBitNotes.set(bit, {note: config.note, channel: config.channel});
                 this.activeNotes.add(config.note);
-                this.activeNotes.delete(note);
-                this.noteToBitMap.delete(note);
+                this.noteToBitMap.set(config.note, bit);
             }
         }
     }
